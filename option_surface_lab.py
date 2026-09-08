@@ -143,8 +143,12 @@ def load_or_fetch_pipeline_data(
             call_base = f"{ticker_root.upper()}{call_code}{day_str}{year_str}{strike_str}.U"
             candidate_rics.append(f"{call_base}^{call_code}{year_str}")
 
+            # NOTE: the expired-contract caret suffix always uses the A-L month
+            # series, even for puts. Only the RIC body uses the M-X put codes.
+            # Using ^{put_code} here silently returns "universe is not found"
+            # for every put.
             put_base = f"{ticker_root.upper()}{put_code}{day_str}{year_str}{strike_str}.U"
-            candidate_rics.append(f"{put_base}^{put_code}{year_str}")
+            candidate_rics.append(f"{put_base}^{call_code}{year_str}")
 
     # 3. Batch query options history -- MID_PRICE + TRDPRC_1 (NOT SETTLE)
     batches = [candidate_rics[i:i + batch_size] for i in range(0, len(candidate_rics), batch_size)]
@@ -452,7 +456,10 @@ def render_html(fig_surface_calls, fig_surface_puts, fig_compare, pct_mid_no_tra
 </head>
 <body>
   <h1>OPTION SURFACE LAB — {ticker}</h1>
-  <div class="subtitle">Expired-options pricing pulled from LSEG Workspace, parsed from synthetic OPRA RICs, rendered as a static snapshot.</div>
+  <div class="subtitle">
+    Energy Fuels Inc. ({ticker}) — a US uranium and rare-earth element miner.
+    This page pulls expired {ticker} option contracts from LSEG and plots where real price data exists and where it doesn't.
+  </div>
 
   <div class="meta-panel">
     <h2>What this page shows</h2>
@@ -486,12 +493,29 @@ def render_html(fig_surface_calls, fig_surface_puts, fig_compare, pct_mid_no_tra
   <div class="card">{compare_div}</div>
 
   <div class="writeup">
-    <strong>Analysis</strong><br/><br/>
-    [TODO: Replace with your own 3 sentences]<br/>
-    1. Where is the cloud of price data dense, and where is it empty? ...<br/>
-    2. Why is interpolating across empty cells dangerous on a $0.50 strike grid for a name like UUUU? ...<br/>
-    3. Which field will you treat as the mark next week, and which field will you treat as evidence
-       that someone traded? ...
+    <strong>Analysis</strong>
+    <p>
+      <strong>Where the data is dense, and where it isn't.</strong>
+      Prices cluster around at-the-money strikes in near-dated expiries and thin out fast moving
+      deep in- or out-of-the-money. MID_PRICE covers far more of the grid than TRDPRC_1:
+      {pct_mid_no_trade:.1f}% of contract-days have a quoted mid with no trade behind it. The trade
+      cloud is a sparse subset sitting inside a much denser quote cloud.
+    </p>
+    <p>
+      <strong>Why interpolating the gaps is dangerous here.</strong>
+      On a $0.50 grid for a name this thin, an empty cell usually means nobody quoted or traded that
+      contract — not that a price existed and went unrecorded. Interpolating invents a market that
+      wasn't there, and on a ~$14 underlying each $0.50 step is a real move in moneyness, so a smooth
+      surface can imply a fill you never could have gotten.
+    </p>
+    <p>
+      <strong>Mark vs. evidence of a trade.</strong>
+      MID_PRICE is the mark — it's the closing NBBO midpoint, it exists on far more series, and LSEG
+      exposes no true settlement price for expired US equity options. TRDPRC_1 is evidence someone
+      actually transacted: one print, not a valuation. Median gap between them is ${median_abs_diff:.3f}
+      where both exist, so the mid is a reasonable stand-in — but I'll price off the mid and use trades
+      to check it, not the other way around.
+    </p>
   </div>
 </body>
 </html>
