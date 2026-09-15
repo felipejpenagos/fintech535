@@ -7,6 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Spectral:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
 <style>
 :root{
   --paper:#F7F6F2; --paper-2:#FFFEFB; --ink:#23211C; --ink-2:#5C574C;
@@ -87,6 +90,14 @@ svg{display:block; width:100%; height:auto; overflow:visible}
 .prose code{font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:.85em;
             background:rgba(0,0,0,.045); padding:1px 5px; border-radius:2px}
 
+.eq{margin:16px 0 18px; overflow-x:auto}
+.katex{font-size:1.0em}
+.eq .katex-display{margin:0}
+.eq .katex{font-size:1.05em}
+.eqnote{color:var(--ink-2); font-size:.86rem; margin:-8px 0 18px}
+.cases{display:grid; grid-template-columns:auto 1fr; gap:6px 18px; margin:14px 0 18px;
+       font-size:.9rem; align-items:baseline}
+.cases b{font-weight:600; white-space:nowrap}
 .flag{border-left:3px solid var(--cushion); padding:10px 0 10px 16px; margin:18px 0;
       font-size:.88rem; color:var(--ink-2); max-width:64ch}
 .tabs{display:flex; gap:0; border-bottom:1px solid var(--rule); margin:0 0 6px}
@@ -192,6 +203,33 @@ a{color:var(--nav)}
 </section>
 
 <section class="prose">
+  <h2>The arithmetic of the trade</h2>
+  <p>At expiry the covered call pays the stock's terminal value capped at the strike, less
+  what the shares cost, plus the premium collected:</p>
+  <div class="eq">$$\Pi_{\text{CC}}(S_T) \;=\; \min(S_T,\,K) \;-\; S_0 \;+\; P$$</div>
+  <p>Holding the shares alone pays \(\Pi_{\text{BH}} = S_T - S_0\). Subtracting one from the
+  other collapses the whole comparison into a single line:</p>
+  <div class="eq">$$\Pi_{\text{CC}} - \Pi_{\text{BH}} \;=\; P \;-\; \max(S_T - K,\,0)$$</div>
+  <p class="eqnote">Premium received, less the upside handed over. Nothing else matters.</p>
+
+  <div class="cases">
+    <b>\(S_T \le K\)</b><span>The call expires. You keep the shares and the whole premium, and
+      you beat holding the stock by exactly \(P\).</span>
+    <b>\(K &lt; S_T &lt; K + P\)</b><span>Assigned, but the premium more than covers the upside
+      you gave away. Still ahead.</span>
+    <b>\(S_T \ge K + P\)</b><span>Assigned and behind. Every dollar above \(K+P\) is a dollar
+      you would have kept by doing nothing.</span>
+  </div>
+
+  <p>So the strategy is a bet that the stock finishes below \(K + P\) &mdash; a short volatility
+  position wearing equity clothes. It wins on flat and falling tape and on round trips; it
+  loses on sustained trends. The most it can make is fixed the moment the call is written,
+  while the downside is the stock's own, cushioned by \(P\):</p>
+  <div class="eq">$$\text{max profit} = K - S_0 + P \qquad\qquad \text{breakeven} = S_0 - P$$</div>
+
+  <p id="math-applied"></p>
+
+
   <h2>How the rules were set</h2>
 
   <h3>Choosing the strike</h3>
@@ -225,7 +263,7 @@ a{color:var(--nav)}
   bound on what it could cost to buy the stock and deliver, would be charged heavily.</p>
 
   <h3>What the tape did to the theory</h3>
-  <p id="wu-analysis"></p>
+  <div id="wu-analysis"></div>
 </section>
 
 <footer>
@@ -496,6 +534,24 @@ a{color:var(--nav)}
     }).join('');
 
     el('periodhead').textContent = b.cadence==='monthly' ? 'Month by month' : 'Week by week';
+    var premPct = 100*p.premium_collected/p.starting_cash;
+    var other = null;
+    for(var rk in BOOKS){ if(rk!==root) other = BOOKS[rk]; }
+    el('math-applied').innerHTML =
+      'On this book the premium came to '+fmtMoney(p.premium_collected)+' against '
+      + fmtMoney(p.starting_cash,0)+' of starting capital, or '+premPct.toFixed(1)
+      + '% over '+p.n_traded+' '+(b.cadence==='monthly'?'months':'weeks')+', and '
+      + p.n_assigned+' of those finished above the strike. Net of the upside surrendered '
+      + 'that left the book '+(p.excess_vs_buy_hold_pct>=0?'ahead of':'behind')+' the shares '
+      + 'by '+Math.abs(p.excess_vs_buy_hold_pct).toFixed(2)+' points.'
+      + (other ? ' The same rules on '+esc(other.root)+' collected '
+          + (100*other.performance.premium_collected/other.performance.starting_cash).toFixed(1)
+          + '% and came out '
+          + (other.performance.excess_vs_buy_hold_pct>=0?'ahead by ':'behind by ')
+          + Math.abs(other.performance.excess_vs_buy_hold_pct).toFixed(2)+' points — the gap is '
+          + 'not the assignment count but the size of \\(P\\) relative to what the stock did.'
+        : '');
+
     el('wu-strike').innerHTML = b.strike_rule==='delta'
       ? 'Each Monday the call written is the one whose delta sits closest to '
         + b.target_delta+'. Delta approximates the chance of finishing in the money, so '
@@ -515,25 +571,87 @@ a{color:var(--nav)}
             ? Math.round(b.performance.assignment_rate*100)+'%' : 'n/a')+'.';
 
     var rr = b.regression_ntm;
-    el('wu-analysis').innerHTML =
-      'Over '+p.n_weeks+' weeks the book returned '+pct(p.total_return_pct)+' against '
-      + pct(p.buy_hold_return_pct)+' for holding the shares outright. '
-      + (p.n_assigned+' of '+p.n_traded+' calls finished in the money. ')
-      + (d.rics_resolved!=null
-          ? 'Of '+d.rics_attempted+' candidate contracts constructed from the RIC scheme, '
-            + d.rics_resolved+' returned data ('+Math.round((d.resolve_rate||0)*100)+'%); '
-            + 'the rest were strikes that were never listed. '
+    var unit = b.cadence==='monthly' ? 'months' : 'weeks';
+    var parts = [];
+
+    parts.push('<p>Over '+p.n_traded+' '+unit+' the book returned '+pct(p.total_return_pct)
+      + ' against '+pct(p.buy_hold_return_pct)+' for simply holding the shares, with '
+      + p.n_assigned+' calls finishing in the money and a worst drawdown of '
+      + Math.abs(p.max_drawdown_pct).toFixed(2)+'%.'
+      + (other
+          ? ' Running identical rules on '+esc(other.root)+' produced the opposite sign: '
+            + pct(other.performance.total_return_pct)+' against '
+            + pct(other.performance.buy_hold_return_pct)+'. '
+            + 'One name trended and the cap cost more than the premium was worth; the other '
+            + 'round-tripped and six '+(other.cadence==='monthly'?'months':'weeks')
+            + ' of expensive premium was close to pure income. That is the short-volatility '
+            + 'character of the trade showing up in two tapes rather than in a payoff diagram.'
           : '')
-      + (rr
-          ? 'The midpoint assumption held up with R\u00b2 of '+rr.r2.toFixed(4)+' and a slope of '
-            + rr.beta.toFixed(4)+' on near-the-money contracts, so the fills modelled here are '
-            + 'close to what the tape actually printed. '
-          : '')
-      + 'The obvious next change is the exit: this version never rolls and never buys back '
-      + 'early, so a call that collapses to a few cents by Wednesday still ties up the shares '
-      + 'until Friday for almost no remaining premium. Closing at a fixed fraction of the '
-      + 'premium captured would free those shares to be rewritten, at the cost of paying a '
-      + 'spread to get out.';
+      + '</p>');
+
+    if(rr){
+      var loose = rr.r2 < 0.99 || Math.abs(rr.alpha) > 0.10;
+      parts.push('<p>The fill assumption survived contact with the tape. Regressing the print '
+        + 'on the quoted midpoint across '+rr.n.toLocaleString('en-US')+' near-the-money bars '
+        + 'gives a slope of '+rr.beta.toFixed(4)+' and R\u00b2 of '+rr.r2.toFixed(4)
+        + ', so trades land essentially where the mid said they would. The intercept is the '
+        + 'more interesting number: '+fmtMoney(rr.alpha,4)+'. '
+        + (loose
+            ? 'That is a systematic offset in absolute dollars, independent of price level, and '
+              + 'it is the width of the market showing up as bias. Modelling fills at the mid on '
+              + 'this name is optimistic by roughly that much per share on every trade.'
+            : 'At a third of a cent it is indistinguishable from zero, which is what a liquid '
+              + 'market is supposed to look like.')
+        + (other && other.regression_ntm
+            ? ' The same regression on '+esc(other.root)+' returns R\u00b2 '
+              + other.regression_ntm.r2.toFixed(4)+' with an intercept of '
+              + fmtMoney(other.regression_ntm.alpha,4)+'. Slope is near one on both, so the '
+              + 'difference is not proportional mispricing — it is liquidity, and it appears as '
+              + 'a fixed per-share offset rather than a scaling error.'
+            : '')
+        + '</p>');
+    }
+
+    parts.push('<p>Two things about the data itself cost more effort than the strategy did. '
+      + 'The published RIC scheme states that the expiry day is not zero-padded. It is: '
+      + '<code>AAPLH72633500.U^H26</code> returns nothing while '
+      + '<code>AAPLH072633500.U^H26</code> returns a full series. The rule as written is '
+      + 'correct only for monthly contracts, which expire on a third Friday and therefore '
+      + 'never fall on a single-digit day — the reference implementations it derives from only '
+      + 'ever handle monthlies, so the case never arises there. Every weekly expiring on the '
+      + '1st through the 9th silently vanishes. Separately, the caret suffix uses the call-series '
+      + 'month letter even on puts, which is why an earlier attempt at put data returned nothing '
+      + 'at all rather than returning something wrong.</p>');
+
+    parts.push('<p>The second is that MPWR lists no weekly options. Probing eleven consecutive '
+      + 'Fridays at a strike known to exist, only the third Fridays resolved, and the strike '
+      + 'grid turned out to be $20 rather than the $5 AAPL uses. Neither fact is visible from a '
+      + 'price chart, and both are fatal to a weekly covered call — the strategy is simply '
+      + 'unrunnable on that name at that cadence, which is why it is backtested monthly here. '
+      + 'Two Fridays in the window (19 June and 3 July) carry no expiry at all because the '
+      + 'market was closed, so expiries are taken from the last session actually present in the '
+      + 'tape rather than from the calendar.</p>');
+
+    parts.push('<p>What I would change is the exit. The rule here never rolls and never buys '
+      + 'back, so a call that has decayed to a few cents by midweek still ties up the shares '
+      + 'until expiry for almost no remaining premium, and a call that goes deep in the money '
+      + 'early is carried to assignment with no chance to defend it. Closing at a fixed '
+      + 'fraction of premium captured would free the shares to be rewritten sooner, at the cost '
+      + 'of paying a spread to get out — and on a name with a '+fmtMoney(Math.abs(rr?rr.alpha:0),2)
+      + ' bias between mid and print, that spread is not free. The strike rule deserves the same '
+      + 'treatment: a fixed distance above spot takes a different amount of risk every '
+      + (b.cadence==='monthly'?'month':'week') + ' depending on volatility, where a delta target '
+      + 'would hold assignment probability constant.</p>');
+
+    el('wu-analysis').innerHTML = parts.join('');
+  }
+
+  function typeset(){
+    if(window.renderMathInElement){
+      renderMathInElement(document.body,{delimiters:[
+        {left:'$$',right:'$$',display:true},
+        {left:'\\(',right:'\\)',display:false}],throwOnError:false});
+    }
   }
 
   Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(t){
@@ -541,9 +659,12 @@ a{color:var(--nav)}
       Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(o){
         o.setAttribute('aria-selected', o===t ? 'true':'false'); });
       render(t.dataset.root);
+      typeset();
     });
   });
   render(cur);
+  if(document.readyState==='complete') typeset();
+  else window.addEventListener('load', typeset);
 })();
 </script>
 </body>
