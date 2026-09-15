@@ -1,0 +1,668 @@
+"""
+Build the static site from data/book_{ROOT}.json.
+
+    python3 build_site.py AAPL MPWR
+
+Writes site/index.html, site/book.js, site/data.html. Copy those to the repo
+root (or set Pages to serve /site) and push.
+
+Pure string generation -- no server, no build step, no framework. GitHub Pages
+serves static files only, which is the whole constraint.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(HERE, "data")
+SITE_DIR = os.path.join(HERE, "site")
+
+
+CSS = """
+:root{
+  --paper:#F7F6F2; --paper-2:#FFFEFB; --ink:#23211C; --ink-2:#5C574C;
+  --rule:#DDD8CB; --rule-2:#EDE9DF;
+  --credit:#2D5F3F; --debit:#8C2F2F; --cushion:#C8A961; --nav:#2B4C6F;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:Spectral,Georgia,'Times New Roman',serif;
+  font-size:17px; line-height:1.55;
+}
+.wrap{max-width:1080px; margin:0 auto; padding:0 28px 96px}
+.num{font-family:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+     font-variant-numeric:tabular-nums; font-feature-settings:"tnum" 1}
+
+header.masthead{padding:56px 0 28px; border-bottom:2px solid var(--ink)}
+h1{font-size:2.6rem; line-height:1.1; margin:0 0 .3em; font-weight:600; letter-spacing:-.01em}
+.standfirst{font-size:1.1rem; color:var(--ink-2); max-width:62ch; margin:0}
+.meta{margin-top:20px; font-size:.82rem; color:var(--ink-2)}
+.meta span{margin-right:22px}
+
+h2{font-size:1.5rem; font-weight:600; margin:0 0 6px; letter-spacing:-.005em}
+section{padding-top:52px}
+.lede{color:var(--ink-2); max-width:66ch; margin:0 0 22px}
+
+.figures{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+         gap:0; border-top:1px solid var(--rule); border-bottom:1px solid var(--rule);
+         margin:28px 0}
+.fig{padding:16px 20px 16px 0}
+.fig dt{font-size:.78rem; color:var(--ink-2); margin-bottom:4px}
+.fig dd{margin:0; font-size:1.45rem; font-weight:600}
+.pos{color:var(--credit)} .neg{color:var(--debit)}
+
+table{width:100%; border-collapse:collapse; font-size:.86rem}
+thead th{text-align:left; font-weight:600; font-size:.74rem; color:var(--ink-2);
+         padding:0 12px 7px 0; border-bottom:1px solid var(--ink); white-space:nowrap}
+tbody td{padding:7px 12px 7px 0; border-bottom:1px solid var(--rule-2); vertical-align:top}
+tbody tr:nth-child(even){background:rgba(0,0,0,.015)}
+td.r,th.r{text-align:right; padding-right:18px}
+.side{font-weight:600; font-size:.74rem; padding:1px 7px; border:1px solid currentColor; border-radius:2px}
+.side.BUY{color:var(--nav)} .side.SELL{color:var(--credit)}
+.side.EXPIRE{color:var(--ink-2)} .side.ASSIGN{color:var(--debit)}
+.note{color:var(--ink-2); font-size:.8rem; max-width:44ch}
+.occ{display:block; font-size:.74rem; color:var(--ink-2)}
+.scroll{overflow-x:auto; -webkit-overflow-scrolling:touch}
+
+.chart{position:relative; margin:8px 0 4px}
+svg{display:block; width:100%; height:auto; overflow:visible}
+.gridline{stroke:var(--rule-2); stroke-width:1}
+.axis{stroke:var(--ink); stroke-width:1}
+.axis-label{font-size:11px; fill:var(--ink-2)}
+.navline{fill:none; stroke:var(--nav); stroke-width:2}
+.imline{fill:none; stroke:var(--cushion); stroke-width:1.5; stroke-dasharray:5 3}
+.mmline{fill:none; stroke:var(--debit); stroke-width:1.5; stroke-dasharray:2 3}
+.cushionband{fill:var(--cushion); opacity:.13}
+.riskband{fill:var(--debit); opacity:.07}
+.hitline{stroke:var(--ink); stroke-width:1; opacity:0}
+.dot{fill:var(--nav); opacity:0}
+.legend{font-size:.78rem; color:var(--ink-2); display:flex; gap:20px; flex-wrap:wrap; margin-top:10px}
+.legend i{display:inline-block; width:22px; height:0; border-top-width:2px; border-top-style:solid;
+          vertical-align:middle; margin-right:7px}
+
+.readout{font-size:.82rem; color:var(--ink-2); min-height:1.5em; margin-top:6px}
+.readout b{color:var(--ink); font-weight:600}
+
+.pt{fill:var(--nav); opacity:.3}
+.fitline{stroke:var(--debit); stroke-width:1.75}
+.idline{stroke:var(--ink-2); stroke-width:1; stroke-dasharray:3 3; opacity:.5}
+
+.tworow{display:grid; grid-template-columns:1fr 1fr; gap:44px}
+@media(max-width:820px){.tworow{grid-template-columns:1fr; gap:36px}}
+
+.prose{max-width:64ch}
+.prose h3{font-size:1.02rem; font-weight:600; margin:26px 0 5px}
+.prose p{margin:0 0 12px}
+.prose code{font-family:'IBM Plex Mono',ui-monospace,monospace; font-size:.85em;
+            background:rgba(0,0,0,.045); padding:1px 5px; border-radius:2px}
+
+.flag{border-left:3px solid var(--cushion); padding:10px 0 10px 16px; margin:18px 0;
+      font-size:.88rem; color:var(--ink-2); max-width:64ch}
+.tabs{display:flex; gap:0; border-bottom:1px solid var(--rule); margin:0 0 6px}
+.tab{appearance:none; background:none; border:0; border-bottom:2px solid transparent;
+     font:inherit; font-size:.92rem; padding:9px 18px 8px; cursor:pointer; color:var(--ink-2)}
+.tab[aria-selected=true]{border-bottom-color:var(--ink); color:var(--ink); font-weight:600}
+.tab:focus-visible{outline:2px solid var(--nav); outline-offset:-2px}
+footer{margin-top:72px; padding-top:20px; border-top:1px solid var(--rule);
+       font-size:.8rem; color:var(--ink-2)}
+a{color:var(--nav)}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+"""
+
+
+def money(x, dp=2):
+    if x is None:
+        return "&mdash;"
+    s = f"{abs(x):,.{dp}f}"
+    return f"&minus;${s}" if x < 0 else f"${s}"
+
+
+def num(x, dp=2):
+    return "&mdash;" if x is None else f"{x:,.{dp}f}"
+
+
+def build_index(books):
+    tabs = "".join(
+        f'<button class="tab" role="tab" data-root="{b["root"]}" '
+        f'aria-selected="{"true" if i == 0 else "false"}">{b["root"]}</button>'
+        for i, b in enumerate(books)
+    )
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Covered call book &mdash; FINTECH 535</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Spectral:wght@400;600&display=swap" rel="stylesheet">
+<style>{CSS}</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <h1>Covered call book</h1>
+  <p class="standfirst">Buy 100 shares, write a call against them, wait through expiry, and
+  do it again. Booked trade by trade, with the margin account marked the whole way.</p>
+  <p class="meta" id="meta"></p>
+</header>
+
+<div class="tabs" role="tablist">{tabs}</div>
+
+<section>
+  <h2>Where the book ended up</h2>
+  <p class="lede">The comparison that matters is against simply holding the shares. Writing
+  calls trades upside for income, so the covered book should lag in a rally and cushion a
+  decline.</p>
+  <dl class="figures" id="figures"></dl>
+  <div id="perfnote" class="flag"></div>
+</section>
+
+<section>
+  <h2>Account equity against its margin floors</h2>
+  <p class="lede">The shaded band is available funds &mdash; equity less the initial
+  requirement, which is the room this account has to put new risk on. It widens to the full
+  equity in the weeks after a call is assigned, because the shares are gone and a flat book
+  requires nothing. Hover to read any date.</p>
+  <div class="chart" id="navchart"></div>
+  <p class="readout" id="navread">&nbsp;</p>
+  <div class="legend">
+    <span><i style="border-color:var(--nav)"></i>Equity</span>
+    <span><i style="border-color:var(--cushion);border-top-style:dashed"></i>Initial requirement (50% of stock)</span>
+    <span><i style="border-color:var(--debit);border-top-style:dashed"></i>Maintenance (25%)</span>
+    <span><span style="display:inline-block;width:22px;height:11px;background:var(--cushion);opacity:.22;vertical-align:middle;margin-right:7px"></span>Available funds</span>
+  </div>
+</section>
+
+<section>
+  <h2>Does the midpoint predict the print?</h2>
+  <p class="lede">Every bar where a contract carried both a two-sided quote and a real trade,
+  regressing the print on the midpoint. If the slope sits near one and the scatter is tight,
+  filling at the mid is a defensible assumption on this name.</p>
+  <div class="tworow">
+    <div>
+      <div class="chart" id="scatter"></div>
+      <p class="readout" id="scatterread">&nbsp;</p>
+    </div>
+    <div>
+      <dl class="figures" id="regfigs" style="grid-template-columns:1fr 1fr"></dl>
+      <p class="note" id="regnote"></p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Blotter</h2>
+  <p class="lede">Trades that were actually booked. Working orders are not here, and neither
+  is any week where no strike carried a two-sided quote &mdash; those went unfilled.</p>
+  <div class="scroll"><table id="blotter">
+    <thead><tr>
+      <th>Time</th><th>Instrument</th><th>Side</th><th class="r">Qty</th>
+      <th class="r">Limit</th><th class="r">Fill</th><th class="r">Cash</th><th>Rule</th>
+    </tr></thead><tbody></tbody>
+  </table></div>
+  <p class="note" id="skipnote"></p>
+</section>
+
+<section>
+  <h2>Ledger</h2>
+  <p class="lede">Position and margin at each session close. The short call carries negative
+  market value because it is a liability, not an asset.</p>
+  <div class="scroll"><table id="ledger">
+    <thead><tr>
+      <th>Date</th><th class="r">Cash</th><th class="r">Shares</th><th>Short call</th>
+      <th class="r">Spot</th><th class="r">Stock value</th><th class="r">Option value</th>
+      <th class="r">Equity</th><th class="r">Initial</th><th class="r">Maint.</th>
+      <th class="r">Available</th>
+    </tr></thead><tbody></tbody>
+  </table></div>
+</section>
+
+<section>
+  <h2 id="periodhead">Week by week</h2>
+  <div class="scroll"><table id="weeks">
+    <thead><tr>
+      <th>Period</th><th class="r">Spot at entry</th><th class="r">Strike</th>
+      <th class="r">Delta</th><th class="r">Premium</th><th class="r">Close</th><th>Outcome</th>
+    </tr></thead><tbody></tbody>
+  </table></div>
+</section>
+
+<section class="prose">
+  <h2>How the rules were set</h2>
+
+  <h3>Choosing the strike</h3>
+  <p id="wu-strike"></p>
+  <p>The premium on a call splits into intrinsic value, <code>max(S&minus;K,0)</code>, and
+  time value. Only the time value is income. Writing a call already in the money collects the
+  intrinsic portion but commits to selling below the current price, handing it straight back,
+  so the strike sits at or above spot and the whole premium is time value.</p>
+
+  <h3>Waiting through expiry</h3>
+  <p>There is no roll and no buy-to-close. On the last session of the week the call either
+  finishes below the strike and expires &mdash; shares and premium both kept, and the next
+  week's call is written against the same shares &mdash; or it finishes above, the shares are
+  called away at the strike, and the following Monday starts flat with a fresh purchase.
+  Fixing the exit this way means every difference in the results traces back to the strike
+  rule rather than to discretion later in the week.</p>
+
+  <h3>Filling at the midpoint</h3>
+  <p>Orders fill at <code>(BID + ASK) / 2</code> at the timestamp of the order. A multi-leg
+  order is quoted and competed on as one net price rather than two separate legs, so fills
+  cluster nearer the midpoint than the two visible spreads would suggest. Where a bar carried
+  no two-sided quote there is no fill and the week is skipped; inventing a print would
+  manufacture returns that no one could have captured. The regression above is the test of
+  whether the assumption holds on this particular name.</p>
+
+  <h3>Why Reg T</h3>
+  <p>Reg T is computable from the position alone, without a broker's risk engine, and it does
+  not vary between brokers. It is also the stricter test: a book that clears Reg T clears
+  portfolio margin, while the reverse does not follow. The short call adds nothing to the
+  requirement here because the shares already cover delivery &mdash; a naked call, with no
+  bound on what it could cost to buy the stock and deliver, would be charged heavily.</p>
+
+  <h3>What the tape did to the theory</h3>
+  <p id="wu-analysis"></p>
+</section>
+
+<footer>
+  <p>FINTECH 535 &middot; Duke University. Prices from LSEG Workspace via the Data Library
+  for Python; the book is rebuilt from a cached pull, so figures are current as of the fetch
+  timestamp above and do not update live. <a href="data.html">Data</a></p>
+</footer>
+
+</div>
+<script src="book.js"></script>
+<script>{JS}</script>
+</body>
+</html>
+"""
+
+
+JS = r"""
+(function(){
+  var BOOKS = window.BOOKS || {};
+  var roots = Object.keys(BOOKS);
+  if(!roots.length){ document.getElementById('meta').textContent = 'No book data.'; return; }
+  var cur = roots[0];
+
+  var fmtMoney = function(x,dp){ if(x==null) return '\u2014';
+    var s = Math.abs(x).toLocaleString('en-US',{minimumFractionDigits:dp==null?2:dp,
+      maximumFractionDigits:dp==null?2:dp});
+    return (x<0?'\u2212$':'$')+s; };
+  var fmtNum = function(x,dp){ return x==null?'\u2014':
+    x.toLocaleString('en-US',{minimumFractionDigits:dp,maximumFractionDigits:dp}); };
+  var pct = function(x,dp){ return x==null?'\u2014':
+    (x>=0?'+':'\u2212')+Math.abs(x).toFixed(dp==null?2:dp)+'%'; };
+  var esc = function(s){ return String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+  var el = function(id){ return document.getElementById(id); };
+
+  // ---- charts ---------------------------------------------------------
+  function navChart(b){
+    var L = b.ledger; var host = el('navchart'); host.innerHTML='';
+    if(!L.length){ host.innerHTML='<p class="note">No ledger rows.</p>'; return; }
+    var W=1080,H=380,m={t:14,r:16,b:30,l:70};
+    var iw=W-m.l-m.r, ih=H-m.t-m.b;
+    var navs=L.map(function(r){return r.nav;});
+    var ims=L.map(function(r){return r.initial_margin;});
+    var lo=Math.min.apply(null,navs.concat(L.map(function(r){return r.maintenance_margin;})));
+    var hi=Math.max.apply(null,navs.concat(ims));
+    var pad=(hi-lo)*0.12||1; lo-=pad; hi+=pad*0.6; if(lo<0) lo=0;
+    var X=function(i){ return m.l + (L.length<2?iw/2:(i/(L.length-1))*iw); };
+    var Y=function(v){ return m.t + ih - ((v-lo)/(hi-lo))*ih; };
+    var path=function(key){ return L.map(function(r,i){
+      return (i?'L':'M')+X(i).toFixed(1)+' '+Y(r[key]).toFixed(1); }).join(' '); };
+
+    // The gap between equity and initial margin IS available funds -- the room
+    // to put new risk on. Shade it, because that is the number the account
+    // lives or dies by. Where the book is flat after assignment the shares are
+    // gone, so the requirement is zero and the whole equity is available.
+    var band = L.map(function(r,i){return (i?'L':'M')+X(i).toFixed(1)+' '+Y(r.nav).toFixed(1);}).join(' ')
+      + ' ' + L.slice().reverse().map(function(r,i){
+        var j=L.length-1-i; return 'L'+X(j).toFixed(1)+' '+Y(r.initial_margin).toFixed(1);}).join(' ') + ' Z';
+    // below maintenance is the margin-call zone
+    var risk = 'M'+m.l+' '+Y(lo)+' '+L.map(function(r,i){
+      return 'L'+X(i).toFixed(1)+' '+Y(r.maintenance_margin).toFixed(1);}).join(' ')
+      + ' L'+X(L.length-1).toFixed(1)+' '+Y(lo)+' Z';
+
+    var ticks=5, g='', lbl='';
+    for(var k=0;k<=ticks;k++){
+      var v=lo+(hi-lo)*k/ticks, y=Y(v).toFixed(1);
+      g+='<line class="gridline" x1="'+m.l+'" y1="'+y+'" x2="'+(W-m.r)+'" y2="'+y+'"/>';
+      lbl+='<text class="axis-label num" x="'+(m.l-9)+'" y="'+(+y+4)+'" text-anchor="end">'
+         + Math.round(v).toLocaleString('en-US')+'</text>';
+    }
+    var xt='';
+    var step=Math.max(1,Math.floor(L.length/6));
+    for(var i=0;i<L.length;i+=step){
+      xt+='<text class="axis-label num" x="'+X(i).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle">'
+        + esc(L[i].time.slice(5,10))+'</text>';
+    }
+
+    host.innerHTML =
+      '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Account equity against margin floors">'
+      + g
+      + '<path class="riskband" d="'+risk+'"/>'
+      + '<path class="cushionband" d="'+band+'"/>'
+      + '<path class="mmline" d="'+path('maintenance_margin')+'"/>'
+      + '<path class="imline" d="'+path('initial_margin')+'"/>'
+      + '<path class="navline" d="'+path('nav')+'"/>'
+      + '<line class="axis" x1="'+m.l+'" y1="'+(m.t+ih)+'" x2="'+(W-m.r)+'" y2="'+(m.t+ih)+'"/>'
+      + lbl + xt
+      + '<line class="hitline" id="nav-vline" y1="'+m.t+'" y2="'+(m.t+ih)+'"/>'
+      + '<circle class="dot" id="nav-dot" r="4"/>'
+      + '<rect x="'+m.l+'" y="'+m.t+'" width="'+iw+'" height="'+ih+'" fill="transparent" id="nav-hit"/>'
+      + '</svg>';
+
+    var svg=host.querySelector('svg'), hit=el('nav-hit'),
+        vl=el('nav-vline'), dot=el('nav-dot'), read=el('navread');
+    function at(ev){
+      var pt=svg.createSVGPoint(), t=ev.touches?ev.touches[0]:ev;
+      pt.x=t.clientX; pt.y=t.clientY;
+      var p=pt.matrixTransform(svg.getScreenCTM().inverse());
+      var i=Math.round(((p.x-m.l)/iw)*(L.length-1));
+      i=Math.max(0,Math.min(L.length-1,i));
+      var r=L[i];
+      vl.setAttribute('x1',X(i)); vl.setAttribute('x2',X(i)); vl.style.opacity=.35;
+      dot.setAttribute('cx',X(i)); dot.setAttribute('cy',Y(r.nav)); dot.style.opacity=1;
+      read.innerHTML = '<b>'+esc(r.time.slice(0,10))+'</b> &nbsp; equity <b>'+fmtMoney(r.nav)
+        + '</b> &nbsp; cash '+fmtMoney(r.cash)+' &nbsp; '+r.shares+' shares at '+fmtMoney(r.spot)
+        + (r.short_call_strike? ' &nbsp; short '+fmtNum(r.short_call_strike,2)+' call marked '
+           + (r.option_mark==null?'\u2014':fmtMoney(r.option_mark)) : '')
+        + ' &nbsp; available '+fmtMoney(r.available_funds);
+    }
+    function off(){ vl.style.opacity=0; dot.style.opacity=0; read.innerHTML='&nbsp;'; }
+    hit.addEventListener('mousemove',at); hit.addEventListener('mouseleave',off);
+    hit.addEventListener('touchmove',function(e){e.preventDefault();at(e);},{passive:false});
+  }
+
+  function scatterChart(b){
+    var pts=b.scatter||[], reg=b.regression_ntm||b.regression_all, host=el('scatter');
+    host.innerHTML='';
+    if(pts.length<3){ host.innerHTML='<p class="note">Too few paired quote-and-print bars to regress.</p>'; return; }
+    var W=520,H=420,m={t:12,r:12,b:38,l:52};
+    var iw=W-m.l-m.r, ih=H-m.t-m.b;
+    var xs=pts.map(function(p){return p.mid;}), ys=pts.map(function(p){return p.trade;});
+    var hi=Math.max(Math.max.apply(null,xs),Math.max.apply(null,ys))*1.05;
+    var X=function(v){ return m.l+(v/hi)*iw; }, Y=function(v){ return m.t+ih-(v/hi)*ih; };
+    var g='';
+    for(var k=0;k<=4;k++){
+      var v=hi*k/4, y=Y(v).toFixed(1), x=X(v).toFixed(1);
+      g+='<line class="gridline" x1="'+m.l+'" y1="'+y+'" x2="'+(W-m.r)+'" y2="'+y+'"/>'
+       + '<text class="axis-label num" x="'+(m.l-8)+'" y="'+(+y+4)+'" text-anchor="end">'+v.toFixed(1)+'</text>'
+       + '<text class="axis-label num" x="'+x+'" y="'+(H-20)+'" text-anchor="middle">'+v.toFixed(1)+'</text>';
+    }
+    var dots=pts.map(function(p){
+      return '<circle class="pt" cx="'+X(p.mid).toFixed(1)+'" cy="'+Y(p.trade).toFixed(1)+'" r="2.2"/>';
+    }).join('');
+    var fit='';
+    if(reg){
+      var y0=reg.alpha, y1=reg.alpha+reg.beta*hi;
+      fit='<line class="fitline" x1="'+X(0)+'" y1="'+Y(Math.max(y0,0))+'" x2="'+X(hi)+'" y2="'+Y(y1)+'"/>';
+    }
+    host.innerHTML='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Trade price against quoted midpoint">'
+      + g
+      + '<line class="idline" x1="'+X(0)+'" y1="'+Y(0)+'" x2="'+X(hi)+'" y2="'+Y(hi)+'"/>'
+      + dots + fit
+      + '<line class="axis" x1="'+m.l+'" y1="'+(m.t+ih)+'" x2="'+(W-m.r)+'" y2="'+(m.t+ih)+'"/>'
+      + '<line class="axis" x1="'+m.l+'" y1="'+m.t+'" x2="'+m.l+'" y2="'+(m.t+ih)+'"/>'
+      + '<text class="axis-label" x="'+(m.l+iw/2)+'" y="'+(H-4)+'" text-anchor="middle">Quoted midpoint ($)</text>'
+      + '<text class="axis-label" transform="translate(13,'+(m.t+ih/2)+') rotate(-90)" text-anchor="middle">Trade print ($)</text>'
+      + '</svg>';
+    var ntmN = (b.regression_ntm||{}).n;
+    el('scatterread').innerHTML = 'Dashed line is <b>y = x</b>; solid line is the fit. '
+      + 'All '+pts.length.toLocaleString('en-US')+' paired bars are plotted'
+      + (ntmN && ntmN<pts.length
+          ? '; the fit and the figures alongside use the '+ntmN.toLocaleString('en-US')
+            +' near-the-money bars.' : '.');
+  }
+
+  // ---- render ---------------------------------------------------------
+  function render(root){
+    var b=BOOKS[root]; cur=root;
+    var p=b.performance, d=b.diagnostics||{};
+
+    el('meta').innerHTML =
+      '<span>'+esc(b.underlying)+'</span>'
+      + '<span>'+esc(b.window.start)+' to '+esc(b.window.end)+'</span>'
+      + '<span>'+esc(b.interval)+' bars</span>'
+      + '<span>'+(b.cadence==='monthly'?'monthly expiries':'weekly expiries')+'</span>'
+      + '<span>strike rule: '+esc(b.strike_rule==='delta'
+          ? 'target '+b.target_delta+' delta' : 'nearest out-of-the-money')+'</span>'
+      + '<span>fetched '+esc(b.fetched_at)+'</span>';
+
+    var f=[
+      ['Starting cash', fmtMoney(p.starting_cash,0), ''],
+      ['Ending equity', fmtMoney(p.final_nav), ''],
+      ['Return', pct(p.total_return_pct), p.total_return_pct>=0?'pos':'neg'],
+      ['Holding the shares instead', pct(p.buy_hold_return_pct), p.buy_hold_return_pct>=0?'pos':'neg'],
+      ['Difference', pct(p.excess_vs_buy_hold_pct), p.excess_vs_buy_hold_pct>=0?'pos':'neg'],
+      ['Premium collected', fmtMoney(p.premium_collected), 'pos'],
+      [(b.cadence==='monthly'?'Months written':'Weeks written'),
+       p.n_traded+' of '+p.n_weeks, ''],
+      ['Called away', p.n_assigned+(p.assignment_rate!=null?' ('+Math.round(p.assignment_rate*100)+'%)':''), ''],
+      ['Deepest drawdown', pct(p.max_drawdown_pct), 'neg']
+    ];
+    el('figures').innerHTML = f.map(function(r){
+      return '<div class="fig"><dt>'+esc(r[0])+'</dt><dd class="num '+r[2]+'">'+r[1]+'</dd></div>';
+    }).join('');
+
+    var lag = p.excess_vs_buy_hold_pct;
+    el('perfnote').innerHTML = (lag<0
+      ? 'The book lagged simply holding the shares by '+Math.abs(lag).toFixed(2)+' points. '
+        + 'That is the cap working as designed: '+p.n_assigned+' of '+p.n_traded
+        + ' weeks finished above the strike, so those shares were sold at the strike '
+        + 'while the stock kept going.'
+      : 'The book beat simply holding the shares by '+lag.toFixed(2)+' points. Premium covered '
+        + 'more than the upside that was given away, which is what a covered call is supposed '
+        + 'to do in a flat or falling tape.')
+      + (p.margin_breaches>0
+        ? ' <b>Available funds went negative on '+p.margin_breaches+' marks &mdash; those trades '
+          + 'could not have been put on as booked.</b>'
+        : ' Available funds stayed positive throughout, so every trade here was fundable.');
+
+    navChart(b); scatterChart(b);
+
+    var reg=b.regression_ntm, all=b.regression_all;
+    el('regfigs').innerHTML = reg ? [
+      ['Slope', fmtNum(reg.beta,4)],
+      ['Intercept', fmtMoney(reg.alpha,4)],
+      ['R\u00b2', fmtNum(reg.r2,4)],
+      ['Paired bars', reg.n.toLocaleString('en-US')],
+      ['Typical miss', fmtMoney(reg.mean_abs_resid,4)],
+      ['Root mean square error', fmtMoney(reg.rmse,4)]
+    ].map(function(r){ return '<div class="fig"><dt>'+r[0]+'</dt><dd class="num">'+r[1]+'</dd></div>';
+    }).join('') : '<p class="note">Not enough paired bars.</p>';
+
+    if(reg){
+      var tight = reg.r2>0.99, unbiased = Math.abs(reg.beta-1)<0.02;
+      el('regnote').innerHTML =
+        'Near-the-money contracts, within 5% of spot either side. A slope of '
+        + reg.beta.toFixed(4)+' means a print lands '
+        + (unbiased ? 'essentially on the midpoint'
+                    : (reg.beta>1?'above':'below')+' the midpoint by about '
+                      + Math.abs((reg.beta-1)*100).toFixed(1)+'% of the quote')
+        + ', and R\u00b2 of '+reg.r2.toFixed(4)+' says the midpoint explains '
+        + (reg.r2*100).toFixed(2)+'% of the variation in where trades actually happened. '
+        + (tight ? 'Filling at the mid is defensible here.'
+                 : 'That is loose enough that mid fills should be treated as optimistic.')
+        + (all && all.n>reg.n ? ' Across the whole chain, including far strikes, R\u00b2 is '
+            + all.r2.toFixed(4)+' on '+all.n.toLocaleString('en-US')+' bars.' : '');
+    }
+
+    el('blotter').querySelector('tbody').innerHTML = b.blotter.map(function(r){
+      return '<tr><td class="num">'+esc(r.time.slice(0,16))+'</td>'
+        + '<td>'+esc(r.instrument)+'<span class="occ">'+esc(r.occ)+'</span></td>'
+        + '<td><span class="side '+r.side+'">'+r.side+'</span></td>'
+        + '<td class="r num">'+r.qty+'</td>'
+        + '<td class="r num">'+(r.limit==null?'\u2014':fmtNum(r.limit,2))+'</td>'
+        + '<td class="r num">'+(r.fill==null?'\u2014':fmtNum(r.fill,2))+'</td>'
+        + '<td class="r num '+(r.cash_delta>0?'pos':(r.cash_delta<0?'neg':''))+'">'
+        + (r.cash_delta===0?'\u2014':fmtMoney(r.cash_delta))+'</td>'
+        + '<td class="note">'+esc(r.note)+'</td></tr>';
+    }).join('');
+
+    el('skipnote').innerHTML = b.skipped_weeks.length
+      ? b.skipped_weeks.length+' week'+(b.skipped_weeks.length>1?'s':'')
+        +' produced no fill because no strike carried a two-sided quote at the entry bar. '
+        +'No trade was booked for those weeks.'
+      : 'Every week produced a fill.';
+
+    var L=b.ledger, keep=L.length>140?Math.ceil(L.length/140):1;
+    el('ledger').querySelector('tbody').innerHTML = L.filter(function(_,i){
+      return i%keep===0 || i===L.length-1; }).map(function(r){
+      return '<tr><td class="num">'+esc(r.time.slice(0,10))+'</td>'
+        + '<td class="r num">'+fmtMoney(r.cash)+'</td>'
+        + '<td class="r num">'+r.shares+'</td>'
+        + '<td class="num">'+(r.short_call_strike? fmtNum(r.short_call_strike,2)+'C '
+            +esc(String(r.short_call_expiry||'').slice(5)) : '\u2014')+'</td>'
+        + '<td class="r num">'+fmtMoney(r.spot)+'</td>'
+        + '<td class="r num">'+fmtMoney(r.lmv,0)+'</td>'
+        + '<td class="r num '+(r.option_mv<0?'neg':'')+'">'
+            +(r.option_mv===0?'\u2014':fmtMoney(r.option_mv))+'</td>'
+        + '<td class="r num">'+fmtMoney(r.nav)+'</td>'
+        + '<td class="r num">'+fmtMoney(r.initial_margin,0)+'</td>'
+        + '<td class="r num">'+fmtMoney(r.maintenance_margin,0)+'</td>'
+        + '<td class="r num '+(r.available_funds<0?'neg':'')+'">'+fmtMoney(r.available_funds,0)+'</td></tr>';
+    }).join('');
+
+    el('weeks').querySelector('tbody').innerHTML = b.weeks.map(function(w){
+      return '<tr><td class="num">'+esc(w.iso_week)+'</td>'
+        + '<td class="r num">'+fmtMoney(w.spot)+'</td>'
+        + '<td class="r num">'+(w.strike==null?'\u2014':fmtNum(w.strike,2))+'</td>'
+        + '<td class="r num">'+(w.delta==null?'\u2014':fmtNum(w.delta,3))+'</td>'
+        + '<td class="r num pos">'+(w.premium==null?'\u2014':fmtMoney(w.premium))+'</td>'
+        + '<td class="r num">'+fmtMoney(w.exit_close)+'</td>'
+        + '<td><span class="side '+(w.outcome==='ASSIGNED'?'ASSIGN':
+            (w.outcome==='EXPIRED'?'EXPIRE':'BUY'))+'">'+w.outcome+'</span></td></tr>';
+    }).join('');
+
+    el('periodhead').textContent = b.cadence==='monthly' ? 'Month by month' : 'Week by week';
+    el('wu-strike').innerHTML = b.strike_rule==='delta'
+      ? 'Each Monday the call written is the one whose delta sits closest to '
+        + b.target_delta+'. Delta approximates the chance of finishing in the money, so '
+        + 'targeting it fixes the assignment probability week to week. A fixed dollar '
+        + 'distance does not: the same strike is a far safer bet in a quiet week than in '
+        + 'a volatile one, and the rule would silently take more risk exactly when the '
+        + 'market is most dangerous. Realised assignment came in at '
+        + (b.performance.assignment_rate!=null
+            ? Math.round(b.performance.assignment_rate*100)+'%' : 'n/a')+'.'
+      : 'Each Monday the call written is the lowest listed strike at or above the entry '
+        + 'print. This is the least arbitrary version of "sell upside, keep the shares": '
+        + 'the premium is entirely time value, and the shares have room to appreciate to '
+        + 'the strike before any of that upside is given up. Its weakness is that a fixed '
+        + 'strike distance means a different assignment probability every week depending on '
+        + 'how volatile the market is &mdash; realised assignment came in at '
+        + (b.performance.assignment_rate!=null
+            ? Math.round(b.performance.assignment_rate*100)+'%' : 'n/a')+'.';
+
+    var rr = b.regression_ntm;
+    el('wu-analysis').innerHTML =
+      'Over '+p.n_weeks+' weeks the book returned '+pct(p.total_return_pct)+' against '
+      + pct(p.buy_hold_return_pct)+' for holding the shares outright. '
+      + (p.n_assigned+' of '+p.n_traded+' calls finished in the money. ')
+      + (d.rics_resolved!=null
+          ? 'Of '+d.rics_attempted+' candidate contracts constructed from the RIC scheme, '
+            + d.rics_resolved+' returned data ('+Math.round((d.resolve_rate||0)*100)+'%); '
+            + 'the rest were strikes that were never listed. '
+          : '')
+      + (rr
+          ? 'The midpoint assumption held up with R\u00b2 of '+rr.r2.toFixed(4)+' and a slope of '
+            + rr.beta.toFixed(4)+' on near-the-money contracts, so the fills modelled here are '
+            + 'close to what the tape actually printed. '
+          : '')
+      + 'The obvious next change is the exit: this version never rolls and never buys back '
+      + 'early, so a call that collapses to a few cents by Wednesday still ties up the shares '
+      + 'until Friday for almost no remaining premium. Closing at a fixed fraction of the '
+      + 'premium captured would free those shares to be rewritten, at the cost of paying a '
+      + 'spread to get out.';
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(t){
+    t.addEventListener('click',function(){
+      Array.prototype.forEach.call(document.querySelectorAll('.tab'),function(o){
+        o.setAttribute('aria-selected', o===t ? 'true':'false'); });
+      render(t.dataset.root);
+    });
+  });
+  render(cur);
+})();
+"""
+
+
+DATA_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Data &mdash; covered call book</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Spectral:wght@400;600&display=swap" rel="stylesheet">
+<style>%s</style>
+</head>
+<body><div class="wrap">
+<header class="masthead">
+  <h1>Data connection required</h1>
+  <p class="standfirst">Pulling prices needs LSEG Workspace running and signed in on the same
+  machine. GitHub Pages serves static files only, so there is nothing here to connect to.</p>
+</header>
+<section class="prose">
+  <h3>Rebuilding the book</h3>
+  <p>With Workspace open:</p>
+  <p><code>python3 fetch.py AAPL.O --weeks 10 --strike-step 5</code><br>
+     <code>python3 run_backtest.py AAPL --rule nearest_otm</code><br>
+     <code>python3 build_site.py AAPL MPWR</code></p>
+  <p>The fetch step is the only one that touches the API. It caches to
+  <code>data/raw_AAPL.json</code>, so the backtest and the site can be rebuilt as many times
+  as needed without spending more of the daily request budget.</p>
+</section>
+<footer><p><a href="index.html">Back to the book</a></p></footer>
+</div></body></html>
+""" % CSS
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("roots", nargs="+")
+    args = ap.parse_args()
+
+    os.makedirs(SITE_DIR, exist_ok=True)
+    books = []
+    for r in args.roots:
+        p = os.path.join(DATA_DIR, f"book_{r.upper()}.json")
+        if not os.path.exists(p):
+            print(f"  skipping {r}: no {p}")
+            continue
+        with open(p) as f:
+            books.append(json.load(f))
+
+    if not books:
+        print("no books found -- run run_backtest.py first")
+        raise SystemExit(1)
+
+    payload = {b["root"]: b for b in books}
+    with open(os.path.join(SITE_DIR, "book.js"), "w") as f:
+        f.write("window.BOOKS = " + json.dumps(payload, separators=(",", ":")) + ";")
+
+    with open(os.path.join(SITE_DIR, "index.html"), "w") as f:
+        f.write(build_index(books))
+
+    with open(os.path.join(SITE_DIR, "data.html"), "w") as f:
+        f.write(DATA_PAGE)
+
+    size = os.path.getsize(os.path.join(SITE_DIR, "book.js")) / 1024
+    print(f"wrote site/index.html, site/book.js ({size:.0f} KB), site/data.html")
+    for b in books:
+        print(f"  {b['root']}: {len(b['blotter'])} blotter rows, "
+              f"{len(b['ledger'])} ledger marks, {len(b['scatter'])} scatter points")
+
+
+if __name__ == "__main__":
+    main()
