@@ -1,0 +1,30 @@
+{
+  "run_at": "2026-11-20T23:40-05:00",
+  "session": "2026-11-23",
+  "conid": 208813720,
+  "name": "ALPHABET INC",
+  "last_close": 264.0,
+  "realized_vol_20d": 0.537,
+  "strike_distance_pct": 3.7,
+  "book": {
+    "shares": 0,
+    "short_puts": 0,
+    "short_calls": 0,
+    "cost_basis": null
+  },
+  "decision": "Flat: sell 1 cash-secured put, strike pct:-3.7.",
+  "open_orders": [
+    {
+      "for": "2026-11-23",
+      "order_type": "mkt",
+      "qty": 1,
+      "underlying": 208813720,
+      "expiry": "5DTE+",
+      "ref": "open",
+      "id": "googl-csp-2026-11-23",
+      "action": "SHT",
+      "contract": "put",
+      "strike": "pct:-3.7"
+    }
+  ]
+}

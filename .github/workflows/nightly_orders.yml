@@ -1,0 +1,42 @@
+name: Nightly order refresh
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 03:00 UTC = 10pm EST / 11pm EDT, same clock as the course's nightly refresh.
+    - cron: "0 3 * * *"
+
+concurrency:
+  group: nightly-orders
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  orders:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run the wheel and write open_orders.json
+        env:
+          # LSEG creds are available to the script (not needed by this version of the algorithm)
+          LSEG_APP_KEY: ${{ secrets.LSEG_APP_KEY }}
+          LSEG_USERNAME: ${{ secrets.LSEG_USERNAME }}
+          LSEG_PASSWORD: ${{ secrets.LSEG_PASSWORD }}
+        run: python wheel_algo.py
+
+      - name: Commit and push orders
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Nightly wheel: update open_orders.json"
+          file_pattern: |
+            open_orders.json
+            hw5-final-cycle/status.json
