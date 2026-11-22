@@ -37,6 +37,4 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Nightly wheel: update open_orders.json"
-          file_pattern: |
-            open_orders.json
-            hw5-final-cycle/status.json
+          file_pattern: open_orders.json hw5-final-cycle/status.json
