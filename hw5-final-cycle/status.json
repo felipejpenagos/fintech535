@@ -1,30 +1,40 @@
 {
-  "run_at": "2026-11-20T23:40-05:00",
+  "run_at": "2026-11-23T04:56-05:00",
   "session": "2026-11-23",
   "conid": 208813720,
+  "ticker": "GOOGL",
   "name": "ALPHABET INC",
   "last_close": 264.0,
   "realized_vol_20d": 0.537,
-  "strike_distance_pct": 3.7,
+  "implied_vol_atm": null,
+  "iv_detail": {
+    "reason": "LSEG not configured"
+  },
+  "filter_mode": "all",
+  "filter": "no IV: plain wheel",
+  "strike": "pct:-4.2",
+  "target_expiry": "2026-12-04",
   "book": {
     "shares": 0,
     "short_puts": 0,
     "short_calls": 0,
     "cost_basis": null
   },
-  "decision": "Flat: sell 1 cash-secured put, strike pct:-3.7.",
+  "decision": "Flat: sell 1 cash-secured put, strike pct:-4.2, limit at mid.",
+  "validation": "all orders pass the Sanji spec check",
   "open_orders": [
     {
+      "id": "googl-csp-2026-11-23",
+      "action": "SHT",
+      "contract": "put",
+      "strike": "pct:-4.2",
       "for": "2026-11-23",
-      "order_type": "mkt",
+      "order_type": "lmt",
       "qty": 1,
       "underlying": 208813720,
       "expiry": "5DTE+",
       "ref": "open",
-      "id": "googl-csp-2026-11-23",
-      "action": "SHT",
-      "contract": "put",
-      "strike": "pct:-3.7"
+      "lmt_prc": "mid"
     }
   ]
 }
