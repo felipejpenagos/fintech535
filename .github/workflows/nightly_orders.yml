@@ -5,6 +5,13 @@ on:
   schedule:
     # 03:00 UTC = 10pm EST / 11pm EDT, same clock as the course's nightly refresh.
     - cron: "0 3 * * *"
+  push:
+    # also run when the algorithm itself changes, so a new version is checked right away
+    branches: [main]
+    paths:
+      - "wheel_algo.py"
+      - "hw5-final-cycle/src/**"
+      - ".github/workflows/nightly_orders.yml"
 
 concurrency:
   group: nightly-orders
@@ -25,16 +32,22 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install dependencies
+        run: pip install -q lseg-data
+
+      - name: Scenario tests (stop here if any fail)
+        run: python hw5-final-cycle/src/test_wheel.py
+
       - name: Run the wheel and write open_orders.json
         env:
-          # LSEG creds are available to the script (not needed by this version of the algorithm)
           LSEG_APP_KEY: ${{ secrets.LSEG_APP_KEY }}
           LSEG_USERNAME: ${{ secrets.LSEG_USERNAME }}
           LSEG_PASSWORD: ${{ secrets.LSEG_PASSWORD }}
+          WHEEL_FILTER: all          # all | puts | off
         run: python wheel_algo.py
 
       - name: Commit and push orders
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Nightly wheel: update open_orders.json"
-          file_pattern: open_orders.json hw5-final-cycle/status.json
+          commit_message: "Nightly wheel: update open orders"
+          file_pattern: mkt/open_orders.json open_orders.json hw5-final-cycle/status.json
