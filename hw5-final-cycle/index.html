@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Final Cycle: a nightly wheel on Alphabet</title>
+<title>Final Cycle: a volatility-filtered wheel on Alphabet</title>
 <style>
-:root{--bg:#fff;--fg:#1f2328;--fg2:#59636e;--line:#d1d9e0;--panel:#f6f8fa;--accent:#0969da}
-@media(prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--fg2:#9198a1;--line:#3d444d;--panel:#151b23;--accent:#4493f8}}
+:root{--bg:#fff;--fg:#1f2328;--fg2:#59636e;--line:#d1d9e0;--panel:#f6f8fa;--accent:#0969da;--good:#1a7f37;--bad:#cf222e}
+@media(prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--fg2:#9198a1;--line:#3d444d;--panel:#151b23;--accent:#4493f8;--good:#3fb950;--bad:#f85149}}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 -apple-system,Segoe UI,Helvetica,Arial,sans-serif}
-.wrap{max-width:880px;margin:0 auto;padding:0 20px 60px}
+.wrap{max-width:900px;margin:0 auto;padding:0 20px 60px}
 .top{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:14px 0 0;z-index:5}
 .top h1{font-size:20px;margin:0}.top p{margin:2px 0 8px;color:var(--fg2);font-size:13px}
 .top a.gh{float:right;font-size:13px;color:var(--accent)}
@@ -18,134 +18,191 @@ nav a.on{color:var(--fg);border-bottom-color:#fd8c73;font-weight:600}
 h2{font-size:18px;margin:22px 0 8px}
 pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
 pre{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px;overflow-x:auto}
-table{border-collapse:collapse;width:100%;margin:10px 0}td,th{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}th{background:var(--panel)}
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin:14px 0}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-variant-numeric:tabular-nums}td,th{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}th{background:var(--panel)}
+td.n,th.n{text-align:right}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(165px,1fr));gap:10px;margin:14px 0}
 .cards div{background:var(--panel);border-radius:8px;padding:10px 12px}.cards span{display:block;font-size:12px;color:var(--fg2)}.cards b{font-size:17px}
-.flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0}.flow div{border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--panel)}
+.flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0}.flow div{border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--panel);font-size:14px}
+.note{border-left:3px solid var(--accent);padding:6px 12px;background:var(--panel);margin:12px 0}
+.chart{position:relative;height:260px;margin:10px 0 20px}
+.tick{color:var(--good);font-weight:600}
 </style>
 </head>
 <body>
 <div class="wrap">
 <div class="top">
   <a class="gh" href="https://github.com/felipejpenagos/fintech535">GitHub repo</a>
-  <h1>Final Cycle: a nightly wheel on Alphabet</h1>
-  <p>Felipe Jaramillo · FINTECH 535 · GitHub Action → <code>open_orders.json</code> → Sanji</p>
+  <h1>Final Cycle: a volatility-filtered wheel on Alphabet</h1>
+  <p>Felipe Jaramillo · FINTECH 535 · prices + book + implied vol → <code>mkt/open_orders.json</code> → Sanji</p>
   <nav id="nav"></nav>
 </div>
 
 <section class="page" id="summary" data-title="Summary">
 <h2>What this is</h2>
-<p>Every night at 10&nbsp;pm Eastern a GitHub Action runs <code>wheel_algo.py</code>. The script reads the prices Sanji
-pushed into this repo and the current book, decides the next session's trade, and rewrites
-<code>open_orders.json</code> at the repo root. Sanji fills the order on Luffy and writes back positions and fills,
-which the next night's run reads. That closes the loop.</p>
-<div class="flow"><div>price_history.json<br><small>from Sanji</small></div>→<div>wheel_algo.py<br><small>GitHub Action, 10 pm</small></div>→<div>open_orders.json<br><small>repo root</small></div>→<div>Sanji fills<br><small>positions.json, fills.json</small></div>→<div>next night</div></div>
-<h2>Tonight's decision</h2>
+<p>Every night a GitHub Action runs <code>wheel_algo.py</code>. It reads the prices Sanji pushes into this repo,
+the book Sanji writes back, and live option quotes from LSEG. It decides the next session's trade and writes it to
+<code>mkt/open_orders.json</code> in Sanji's order language. Sanji fills it, updates the book, and the next night starts from there.</p>
+<div class="flow"><div>price_history.json<br><small>Sanji</small></div>→<div>LSEG option quotes<br><small>headless app key</small></div>→<div>wheel_algo.py<br><small>10 pm Action</small></div>→<div>mkt/open_orders.json<br><small>checked against the spec</small></div>→<div>Sanji fills<br><small>positions, fills</small></div></div>
+<h2>Latest decision</h2>
 <div class="cards" id="cards"></div>
 <p id="decision"></p>
+<div class="note">An empty order book (<code>[]</code>) is a real decision: on nights when options are cheap, the algorithm sells nothing.</div>
 </section>
 
 <section class="page" id="thesis" data-title="Thesis">
-<h2>Why the wheel</h2>
-<p>The edge is the volatility risk premium: option prices usually imply more movement than the stock delivers.
-In my HW4 backtest, implied volatility was above realized volatility in about 80% of weeks on both AAPL and MP.
-Selling a put, and a call once assigned, collects that gap every week without having to predict direction.</p>
-<p>The HW4 results: the wheel roughly halved volatility and raised the Sharpe ratio against buy-and-hold on both
-stocks. It beat buy-and-hold on the falling stock (MP) and lagged on the rising one (AAPL) because selling calls
-caps the upside. So the expected result live is a smoother line with a better Sharpe ratio, not a higher return in a rally.</p>
-<h2>Why Alphabet</h2>
-<p>Alphabet is the stock Sanji seeded in this repo's <code>price_history.json</code> (IBKR conid 208813720).
-It is very liquid with tight option spreads, so fills near the open are realistic.</p>
+<h2>Why sell options</h2>
+<p>An option is insurance on the stock. Sellers usually charge more than the moves turn out to be worth:
+<b>implied volatility (IV), the move priced in, tends to exceed realized volatility (RV), the move that happens.</b>
+That gap is the volatility risk premium. In my HW4 wheel backtest, IV at sale beat the following week's RV in about 80% of weeks on both AAPL and MP.
+The wheel collects it every week without forecasting direction.</p>
+<h2>Why the filter</h2>
+<p>If the edge is "insurance is overpriced", the robot should only sell when it looks overpriced.
+So before each sale it compares tonight's at-the-money IV with the stock's last 20 days of RV, and sits the week out when IV ≤ RV.</p>
 <h2>What would prove it wrong</h2>
 <ul>
-<li>Realized volatility rising above implied for several weeks in a row: the premium I am selling is underpriced.</li>
-<li>A sharp drop after a put is assigned: the HW4 failure mode, where the call has to sit above cost basis and the shares earn nothing.</li>
+<li>Live weeks where RV keeps beating the IV we sold at: the premium is not there.</li>
+<li>The filter skipping the best weeks. See the Backtest tab: on MP it did, because trailing RV spikes right after a crash, just when premiums are richest.</li>
 </ul>
 </section>
 
 <section class="page" id="algorithm" data-title="Algorithm">
 <h2>Inputs → orders</h2>
 <table>
-<tr><th>Book at the close</th><th>Order for the next session</th></tr>
-<tr><td>No shares, no short option</td><td><code>SHT</code> 1 put, <code>5DTE+</code>, strike <code>pct:-X</code></td></tr>
-<tr><td>100+ shares, no short call</td><td><code>SHT</code> 1 call, <code>5DTE+</code>, strike <code>pct:+X</code>, never below cost basis</td></tr>
-<tr><td>A short put or call still open</td><td>Nothing: let it expire or be assigned. Sanji applies assignment at the close.</td></tr>
+<tr><th>Book at the close</th><th>IV vs RV</th><th>Order for the next session</th></tr>
+<tr><td>No shares, no short option</td><td>IV &gt; RV</td><td><code>SHT</code> 1 put, about 30 delta, <code>5DTE+</code>, limit at <code>mid</code></td></tr>
+<tr><td>100+ shares, no short call</td><td>IV &gt; RV</td><td><code>SHT</code> 1 call, about 30 delta, never below cost basis</td></tr>
+<tr><td>Either of the above</td><td>IV ≤ RV</td><td>Nothing: options are cheap</td></tr>
+<tr><td>A short put or call still open</td><td>any</td><td>Nothing: let it expire or be assigned (Sanji applies assignment at the close)</td></tr>
 </table>
-<h2>Strike distance X</h2>
-<p>X is half of one week's expected move, using 20-day realized volatility from <code>price_history.json</code>:</p>
-<pre>sigma_week = RV_20d × sqrt(7 / 365)
-X          = 0.5 × sigma_week     (in percent, rounded to 0.1)</pre>
-<p>Half a weekly sigma is roughly a 30-delta option, the same target I used in HW4. Using <code>pct</code> instead of
-<code>delta</code> keeps orders resolvable: Sanji only needs the strike list for <code>pct</code>, while <code>delta</code>
-needs a chain snapshot that Robin may not have yet. When volatility rises the strike moves further out on its own.</p>
-<h2>Order details</h2>
+<h2>The two volatilities</h2>
 <ul>
-<li><b>Expiry</b> <code>5DTE+</code>: the nearest listed expiry at least 5 days out, the weekly wheel from HW4.</li>
-<li><b>Market order at the open</b>: an unfilled limit would leave the wheel idle for a week. Alphabet's spreads are tight, so the cost is small.</li>
-<li><b>One contract</b>: Sanji does not check buying power, so sizing is kept to one cash-secured contract.</li>
-<li><b>IDs</b> like <code>googl-csp-2026-11-23</code> are unique per session, so a rerun the same night cannot double-fill.</li>
-<li><b>Orders not yet processed</b> (dated today or later) are kept; older ones are dropped since Sanji already resolved them.</li>
-<li><b>Holidays</b>: the session date skips weekends and market holidays (Thanksgiving, Christmas, New Year).</li>
+<li><b>IV:</b> LSEG daily bid/ask for the put and call nearest the money on the weekly expiry the order will trade. Black-Scholes is inverted on each midpoint and the two are averaged. Only the derived IV is printed or saved.</li>
+<li><b>RV:</b> standard deviation of the last 20 daily log returns in <code>price_history.json</code>, times √252.</li>
+</ul>
+<h2>The strike: 30 delta written as a percent</h2>
+<p>Sanji rejects <code>delta:30</code> until Robin stores chain snapshots, so the script turns 30 delta into a <code>pct</code> token with Black-Scholes:</p>
+<pre>put:  N(d1) − 1 = −0.30  →  d1 = N⁻¹(0.70) = 0.524
+call: N(d1)     =  0.30  →  d1 = N⁻¹(0.30) = −0.524
+ln(S/K) = d1·σ√T − (r − q + σ²/2)·T      →   pct = (K/S − 1) × 100
+σ = tonight's IV (RV if IV is missing), T = days to the target Friday / 365</pre>
+<p>Example: σ = 51%, T = 11 days gives a put at about <code>pct:-4</code>. Higher vol pushes the strike further out on its own.</p>
+<h2>A night that sells looks like this</h2>
+<pre>[{"id": "googl-csp-2026-11-24", "for": "2026-11-24", "order_type": "lmt", "action": "SHT", "qty": 1,
+  "underlying": 208813720, "contract": "put", "expiry": "5DTE+", "strike": "pct:-4.2",
+  "ref": "open", "lmt_prc": "mid"}]</pre>
+<p>Limit at mid follows the spec's own wheel example. One contract, since Sanji does not check buying power.</p>
+</section>
+
+<section class="page" id="backtest" data-title="Backtest">
+<h2>Does the filter help? Replaying HW4</h2>
+<p>The HW4 wheel engine was rerun on the same cached LSEG data (AAPL and MP, Nov 2025 to Oct 2026, weekly 30-delta options),
+unchanged except for the gate. "Filter on puts" gates only the put sales; "filter on puts and calls" gates both.</p>
+<div id="bt"></div>
+<h2>What it shows</h2>
+<ul>
+<li><b>Options were usually rich:</b> ATM IV beat trailing RV on about 4 Mondays in 5 for both stocks.</li>
+<li><b>AAPL:</b> the full filter raised Sharpe, but mostly by skipping covered calls during the rally, so the shares kept their upside. That is a bet on direction, not the volatility edge.</li>
+<li><b>MP:</b> the filter hurt. Trailing RV jumps right after a crash, so the gate skipped the weeks when premiums were richest.</li>
+<li><b>Verdict:</b> on one year and two stocks, the filter does not reliably beat the plain wheel. It stays on live as an experiment and can be switched off in one line (<code>WHEEL_FILTER: off</code>). A forward-looking comparison, such as IV against an RV forecast, is the next thing to test.</li>
+</ul>
+<div style="font-size:12px;color:var(--fg2)">ATM IV vs trailing 20-day RV at each Monday decision</div>
+<div class="chart"><canvas id="c_aapl"></canvas></div>
+<div class="chart"><canvas id="c_mp"></canvas></div>
+</section>
+
+<section class="page" id="verification" data-title="Verification">
+<h2>How I know it works</h2>
+<table>
+<tr><th>Check</th><th>What it does</th><th>Result</th></tr>
+<tr><td>Scenario tests</td><td>34 situations: flat, assigned, short option open, IV above and below RV, filter switched off, cost basis floor, Thanksgiving and weekend dates, 30-delta math checked against Black-Scholes, positions file in several shapes</td><td class="tick">34 / 34 pass, run before every nightly order</td></tr>
+<tr><td>Order checker</td><td>Every order is checked against the Sanji spec before the file is written: fields, tokens, dates, duplicate ids. If anything fails, the run stops and the old file stays.</td><td class="tick">clean</td></tr>
+<tr><td>Live LSEG login</td><td>The Action logs in with the app key stored as a GitHub secret. No Workspace needed.</td><td class="tick">OK</td></tr>
+<tr><td>Live IV</td><td>First live run: 6 near-the-money GOOGL contracts on the Dec 4 weekly, ATM IV 51% vs RV 54%, so the robot sold nothing</td><td class="tick">worked</td></tr>
+<tr><td>Data rule</td><td>Logs and files hold only derived numbers (IV, RV, decisions). No LSEG quotes are published.</td><td class="tick">kept</td></tr>
+</table>
+<h2>Open questions for Sanji</h2>
+<ul>
+<li><code>positions.json</code> has no published schema yet; Sanji does not resolve orders yet. The script reads the book defensively (several field names, short as a negative quantity or a side field).</li>
+<li>The spec puts the order file in <code>mkt/</code>, while the assignment says the repo root, so both copies are written, identical.</li>
 </ul>
 </section>
 
 <section class="page" id="orders" data-title="Open orders">
-<h2>Current <code>open_orders.json</code></h2>
-<p>Loaded live from the repo, so it shows what the last nightly run wrote.</p>
+<h2>Current <code>mkt/open_orders.json</code></h2>
+<p>Loaded live from the repo.</p>
 <pre id="oo">loading…</pre>
 <h2>Last run</h2>
 <pre id="st">loading…</pre>
 </section>
 
 <section class="page" id="pipeline" data-title="Pipeline">
+<h2>One night</h2>
+<table>
+<tr><th>When (ET)</th><th>What happens</th></tr>
+<tr><td>4:00 pm</td><td>Market closes.</td></tr>
+<tr><td>~10 pm</td><td>Sanji pushes the day's prices and updates the book. The Action runs: tests → LSEG IV → decision → order check → commit.</td></tr>
+<tr><td>9:30 am next day</td><td>The order resolves against the open: <code>pct</code> becomes a real strike, <code>mid</code> a real price.</td></tr>
+<tr><td>After the close</td><td>Sanji records the fill and applies assignment. Repeat.</td></tr>
+</table>
 <h2>The GitHub Action</h2>
-<p>Modeled on the course's <code>oi-plots.yml</code>: same 03:00 UTC cron, same concurrency guard, same auto-commit step.</p>
-<pre>on:
-  workflow_dispatch:
-  schedule:
-    - cron: "0 3 * * *"     # 10pm EST / 11pm EDT
-concurrency: { group: nightly-orders, cancel-in-progress: true }
-permissions: { contents: write }
-steps:
-  checkout → setup-python 3.11
-  → python wheel_algo.py      (LSEG secrets passed in as env)
-  → git-auto-commit: open_orders.json, hw5-final-cycle/status.json</pre>
-<p>The commit updates the site through GitHub Pages, so this page always shows the latest orders.</p>
+<pre>on: schedule "0 3 * * *" (10 pm EST), on pushes to the algorithm, and by hand
+steps: checkout → python 3.11 → pip install lseg-data
+       → python hw5-final-cycle/src/test_wheel.py         (stops here if a test fails)
+       → python wheel_algo.py   (LSEG_APP_KEY / USERNAME / PASSWORD from secrets, WHEEL_FILTER: all)
+       → commit mkt/open_orders.json, open_orders.json, hw5-final-cycle/status.json</pre>
 <h2>Files</h2>
 <table>
-<tr><th>File</th><th>Who writes it</th></tr>
-<tr><td><code>price_history.json</code></td><td>Sanji (prices from IBKR via Robin)</td></tr>
-<tr><td><code>positions.json</code>, <code>fills.json</code></td><td>Sanji, after each session</td></tr>
-<tr><td><code>open_orders.json</code></td><td>This algorithm, nightly</td></tr>
-<tr><td><code>hw5-final-cycle/status.json</code></td><td>This algorithm: the decision shown on this page</td></tr>
+<tr><th>File</th><th>Role</th></tr>
+<tr><td><code>wheel_algo.py</code></td><td>The algorithm: <code>decide(book, iv, rv, …) → orders</code></td></tr>
+<tr><td><code>hw5-final-cycle/src/live_iv.py</code></td><td>LSEG quotes → ATM implied vol</td></tr>
+<tr><td><code>hw5-final-cycle/src/sanji_check.py</code></td><td>Order checker built from the spec</td></tr>
+<tr><td><code>hw5-final-cycle/src/test_wheel.py</code></td><td>Scenario tests</td></tr>
+<tr><td><code>hw5-final-cycle/src/backtest_filter.py</code></td><td>Filter backtest on the HW4 engine and data</td></tr>
+<tr><td><code>hw5-final-cycle/src/bs.py</code>, <code>rics.py</code></td><td>Black-Scholes and OPRA RIC helpers from HW3 and HW4</td></tr>
 </table>
 <h2>Reproduce</h2>
 <pre>git clone https://github.com/felipejpenagos/fintech535 && cd fintech535
-python3 wheel_algo.py        # standard library only; writes open_orders.json</pre>
-<h2>Next steps</h2>
-<ul>
-<li>Use the LSEG secrets to pull implied volatility and skip weeks when implied is below realized.</li>
-<li>Switch strikes to <code>delta:30</code> once Robin has chain snapshots.</li>
-<li>Add a performance monitor that compares live results with the HW4 backtest.</li>
-</ul>
+python3 hw5-final-cycle/src/test_wheel.py          # 34 checks
+python3 hw5-final-cycle/src/backtest_filter.py     # needs numpy and pandas
+python3 wheel_algo.py                               # add the LSEG_* env vars for live IV</pre>
 </section>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
-const pages=[...document.querySelectorAll('.page')], nav=document.getElementById('nav');
+const pages=[...document.querySelectorAll('.page')],nav=document.getElementById('nav');
 pages.forEach(p=>{const a=document.createElement('a');a.href='#'+p.id;a.textContent=p.dataset.title;nav.appendChild(a)});
 function show(){const id=(location.hash||'#summary').slice(1);pages.forEach(p=>p.classList.toggle('on',p.id===id));
   nav.querySelectorAll('a').forEach(a=>a.classList.toggle('on',a.hash==='#'+id));window.scrollTo(0,0)}
 addEventListener('hashchange',show);show();
-const bust='?t='+Date.now();
+const bust='?t='+Date.now(),pc=v=>v==null?'n/a':(100*v).toFixed(0)+'%';
 fetch('status.json'+bust).then(r=>r.json()).then(s=>{
   document.getElementById('st').textContent=JSON.stringify(s,null,2);
-  const c=[['Run at',s.run_at.replace('T',' ')],['Order for session',s.session],['Stock',(s.name||'')+' ('+s.conid+')'],
-    ['Last close','$'+s.last_close],['20-day realized vol',(100*s.realized_vol_20d).toFixed(1)+'%'],['Strike distance',s.strike_distance_pct+'%']];
+  const c=[['Run at',s.run_at.replace('T',' ')],['Planned session',s.session],['Stock',s.ticker+' ('+s.conid+')'],
+    ['Last close','$'+s.last_close],['ATM implied vol',pc(s.implied_vol_atm)],['20-day realized vol',pc(s.realized_vol_20d)],
+    ['Filter',s.filter||'n/a'],['Orders written',(s.open_orders||[]).length]];
   document.getElementById('cards').innerHTML=c.map(([k,v])=>`<div><span>${k}</span><b>${v}</b></div>`).join('');
   document.getElementById('decision').textContent=s.decision;
 }).catch(()=>{document.getElementById('st').textContent='status.json not found yet'});
-fetch('../open_orders.json'+bust).then(r=>r.json()).then(o=>{document.getElementById('oo').textContent=JSON.stringify(o,null,2)})
-  .catch(()=>{document.getElementById('oo').textContent='open_orders.json not found yet'});
+fetch('../mkt/open_orders.json'+bust).then(r=>r.json()).then(o=>{document.getElementById('oo').textContent=JSON.stringify(o,null,2)})
+  .catch(()=>{document.getElementById('oo').textContent='mkt/open_orders.json not found yet'});
+fetch('backtest_filter.json'+bust).then(r=>r.json()).then(B=>{
+  const f=v=>v==null?'':(100*v).toFixed(1)+'%';let h='';
+  for(const root of ['AAPL','MP']){const r=B[root],g=r.gate;
+    h+=`<h2 style="font-size:16px">${root}: options rich on ${g.rich} of ${g.weeks} Mondays (mean IV ${f(g.iv_mean)}, mean RV ${f(g.rv_mean)})</h2>
+    <table><tr><th>Run</th><th class="n">Return</th><th class="n">Vol</th><th class="n">Max DD</th><th class="n">Sharpe</th><th class="n">Puts</th><th class="n">Calls</th><th class="n">Weeks skipped</th></tr>`;
+    for(const k of ['off','puts','all','bh']){const m=r[k].metrics;
+      h+=`<tr><td>${r[k].label}</td><td class="n">${f(m.ret)}</td><td class="n">${f(m.vol)}</td><td class="n">${f(m.max_dd)}</td><td class="n">${m.sharpe}</td><td class="n">${m.puts_sold??''}</td><td class="n">${m.calls_sold??''}</td><td class="n">${r[k].skipped??''}</td></tr>`}
+    h+='</table>'}
+  document.getElementById('bt').innerHTML=h;
+  const dark=matchMedia('(prefers-color-scheme: dark)').matches,tk=dark?'#9198a1':'#59636e',gd=dark?'#2c2c2a':'#e1e0d9';
+  for(const root of ['AAPL','MP']){const s=B[root].gate.series;
+    new Chart(document.getElementById('c_'+root.toLowerCase()),{type:'line',data:{labels:s.map(x=>x[0].slice(5)),datasets:[
+      {label:root+' ATM IV',data:s.map(x=>x[1]*100),borderColor:'#2a78d6',borderWidth:2,pointRadius:0},
+      {label:root+' RV 20d',data:s.map(x=>x[2]*100),borderColor:'#eb6834',borderWidth:2,borderDash:[6,4],pointRadius:0}]},
+      options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},
+        plugins:{legend:{labels:{color:tk,boxWidth:12}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+c.parsed.y.toFixed(0)+'%'}}},
+        scales:{x:{ticks:{color:tk,maxTicksLimit:12},grid:{display:false}},y:{ticks:{color:tk,callback:v=>v+'%'},grid:{color:gd}}}}})}
+}).catch(()=>{document.getElementById('bt').textContent='backtest_filter.json not found'});
 </script>
 </body>
 </html>
