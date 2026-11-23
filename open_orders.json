@@ -1,15 +1,1 @@
-[
-  {
-    "id": "googl-csp-2026-11-23",
-    "action": "SHT",
-    "contract": "put",
-    "strike": "pct:-4.2",
-    "for": "2026-11-23",
-    "order_type": "lmt",
-    "qty": 1,
-    "underlying": 208813720,
-    "expiry": "5DTE+",
-    "ref": "open",
-    "lmt_prc": "mid"
-  }
-]
+[]
