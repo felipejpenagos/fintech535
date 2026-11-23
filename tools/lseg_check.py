@@ -1,5 +1,5 @@
 """One-off check: are the LSEG secrets present, and does a headless login work?
-Prints only yes/no and row counts, never data (LSEG data must not be shown publicly). Rerun 2.
+Prints only yes/no and row counts, never data (LSEG data must not be shown publicly)."""
 import os
 import sys
 
