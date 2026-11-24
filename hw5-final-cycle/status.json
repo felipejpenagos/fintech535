@@ -1,14 +1,14 @@
 {
-  "run_at": "2026-11-23T06:29-05:00",
-  "session": "2026-11-23",
+  "run_at": "2026-11-24T08:03-05:00",
+  "session": "2026-11-24",
   "conid": 208813720,
   "ticker": "GOOGL",
   "name": "ALPHABET INC",
-  "last_close": 264.0,
-  "realized_vol_20d": 0.537,
-  "implied_vol_atm": 0.5146,
+  "last_close": 279.53,
+  "realized_vol_20d": 0.5863,
+  "implied_vol_atm": 0.4068,
   "iv_detail": {
-    "strike": 265.0,
+    "strike": 280.0,
     "expiry": "2026-12-04",
     "n": 6
   },
@@ -22,7 +22,7 @@
     "short_calls": 0,
     "cost_basis": null
   },
-  "decision": "Options are cheap (IV 51% <= RV 54%): sell nothing this session.",
+  "decision": "Options are cheap (IV 41% <= RV 59%): sell nothing this session.",
   "validation": "all orders pass the Sanji spec check",
   "open_orders": []
 }
